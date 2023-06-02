@@ -1,0 +1,98 @@
+version: "3.6"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: rr serve -c /app/.rr.yaml
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./service:/app"
+      - "./rr-config.yaml:/app/.rr.yaml"
+    environment:
+      APP_ENV: local
+      APP_NAME: lara-otel-service
+      APP_KEY: base64:1SHk1sdZNFYb9V/2QLcDkcZIwwfn2bmJoaTotOXmmT8=
+      APP_DEBUG: true
+      APP_URL: http://localhost
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: laravel
+      DB_USERNAME: postgres
+      DB_PASSWORD: foobar
+      BROADCAST_DRIVER: log
+      CACHE_DRIVER: file
+      FILESYSTEM_DISK: local
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: file
+      SESSION_LIFETIME: 120
+      OTEL_PHP_AUTOLOAD_ENABLED: true
+      OTEL_PHP_TRACES_PROCESSOR: simple
+      OTEL_SERVICE_NAME: lara-otel-service
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
+      OTEL_PROPAGATORS: baggage,tracecontext
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PHP_FIBERS_ENABLED: false
+    
+  postgres:
+    image: postgres
+    restart: always
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: foobar
+      POSTGRES_DB: laravel
+  dbgate:
+    image: dbgate/dbgate
+    restart: always
+    ports:
+      - 3001:3000
+    volumes:
+      - dbgdata:/root/.dbgate
+    environment:
+      CONNECTIONS: LARAVEL
+
+      LABEL_LARAVEL: lara_postgres
+      SERVER_LARAVEL: postgres
+      USER_LARAVEL: postgres
+      PASSWORD_LARAVEL: foobar
+      PORT_LARAVEL: 5432
+      ENGINE_LARAVEL: postgres@dbgate-plugin-postgres
+  collector:
+    image: otel/opentelemetry-collector-contrib
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml
+  tempo:
+    image: grafana/tempo:latest
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo-config.yaml:/etc/tempo.yaml
+      - ./tempodata:/tmp/tempo
+    ports:
+      - "3200"   # tempo
+      - "4317"  # otlp grpc
+      - "4318"  # otlp http
+  grafana:
+    image: grafana/grafana:9.3.2
+    volumes:
+      - ./grafana-datasources-config.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  dbgdata:
+  tempodata:
